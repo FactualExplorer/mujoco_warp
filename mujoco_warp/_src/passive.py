@@ -590,9 +590,10 @@ def _fluid_force(
       lfrc_torque *= coef
       lfrc_force *= coef
 
-      # map force/torque from local to world frame: lfrc -> bfrc
-      torque_global += geom_rot @ lfrc_torque
-      force_global += geom_rot @ lfrc_force
+      # Rotate the geom force and shift its torque to the body center of mass.
+      geom_force = geom_rot @ lfrc_force
+      torque_global += geom_rot @ lfrc_torque + wp.cross(geom_pos - xipos, geom_force)
+      force_global += geom_force
 
     fluid_applied_out[worldid, bodyid] = wp.spatial_vector(force_global, torque_global)
     return

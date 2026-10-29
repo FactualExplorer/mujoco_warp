@@ -282,6 +282,50 @@ class PassiveTest(parameterized.TestCase):
 
     self.assertLess(max_err, 5e-4)
 
+  @parameterized.product(nworld=(1, 2), offset=(False, True))
+  def test_ellipsoid_fluid_offset(self, nworld, offset):
+    """Tests fluid torque from geoms offset from the body's center of mass."""
+    mjm, mjd, m, d = test_data.fixture(
+      xml=f"""
+      <mujoco>
+        <option gravity="0 0 0" density="1.3" viscosity="0.07" wind="0.1 0.2 -0.05"/>
+        <worldbody>
+          <body euler="20 -30 40">
+            <freejoint/>
+            <inertial pos="0.1 -0.2 0.05" mass="1" diaginertia="0.1 0.1 0.1"/>
+            <geom type="ellipsoid" size="0.1 0.2 0.15" pos="{"0.5 0.1 -0.2" if offset else "0.1 -0.2 0.05"}"
+                  euler="15 -20 35" fluidshape="ellipsoid"/>
+            <geom type="sphere" size="0.08" pos="{"-0.2 0.3 0.1" if offset else "0.1 -0.2 0.05"}"
+                  fluidshape="ellipsoid"/>
+          </body>
+        </worldbody>
+        <keyframe>
+          <key qvel="0.7 -0.3 0.4 -0.6 0.8 -0.2"/>
+        </keyframe>
+      </mujoco>
+      """,
+      nworld=nworld,
+      keyframe=0,
+    )
+    qvel = d.qvel.numpy()
+    if nworld == 2:
+      qvel[1] *= -0.7
+    d.qvel.assign(qvel)
+    d.qfrc_fluid.fill_(wp.inf)
+    d.qfrc_passive.fill_(wp.inf)
+
+    mjw.fwd_velocity(m, d)
+
+    fluid = d.qfrc_fluid.numpy()
+    passive = d.qfrc_passive.numpy()
+    for world in range(nworld):
+      mjd.qvel[:] = qvel[world]
+      mujoco.mj_forward(mjm, mjd)
+      np.testing.assert_allclose(fluid[world], mjd.qfrc_fluid, rtol=1e-5, atol=1e-5)
+      np.testing.assert_allclose(passive[world], mjd.qfrc_passive, rtol=1e-5, atol=1e-5)
+    if nworld == 2:
+      self.assertFalse(np.allclose(fluid[0], fluid[1]))
+
   def test_fluid_zero_mass_body(self):
     """Tests fluid forces for zero mass body."""
     _, mjd, m, d = test_data.fixture(
